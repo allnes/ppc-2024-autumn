@@ -1,96 +1,87 @@
 #include <gtest/gtest.h>
 
 #include <boost/mpi/timer.hpp>
-#include <boost/mpi/communicator.hpp>
-#include <boost/mpi/environment.hpp>
 #include <vector>
 
 #include "core/perf/include/perf.hpp"
 #include "mpi/pikarychev_i_monte_carlo/include/ops_mpi.hpp"
 
-// Тест для производительности параллельного выполнения Monte Carlo метода
-TEST(mpi_pikarychev_i_monte_carlo_perf_test, test_monte_carlo_pipeline_run) {
+TEST(pikarychev_i_monte_carlo_mpi, test_pipeline_run) {
   boost::mpi::communicator world;
-  std::vector<double> global_result;
-  std::vector<double> expected_result(1, 0.33335967263763133);
-
-  // Инициализация TaskData для параллельного выполнения
+  std::vector<double> global_result(1, 0.0);
+  double a = 0.0;
+  double b = 2.0;
+  int num_points = 100000000;
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
   if (world.rank() == 0) {
-    double a = 0.0;
-    double b = 1.0;
-    int num_samples = 10000000;
-    int seed = 12345;
-    global_result = {0.0};
-    std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-    taskDataPar->inputs_count.emplace_back(inputs.size());
-    taskDataPar->outputs_count.emplace_back(global_result.size());
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
     taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
   }
+  auto testMpiTaskParallel = std::make_shared<pikarychev_i_monte_carlo_mpi::TestMPITaskParallel>(taskDataPar);
+  testMpiTaskParallel->exampl_func = [](double x) { return std::sin(x) * std::cos(x); };
 
-  auto testMpiTaskParallel = std::make_shared<pikarychev_i_monte_carlo_parallel::TestMPITaskParallel>(taskDataPar);
   ASSERT_EQ(testMpiTaskParallel->validation(), true);
   testMpiTaskParallel->pre_processing();
   testMpiTaskParallel->run();
   testMpiTaskParallel->post_processing();
-
-  // Настройка атрибутов производительности
   auto perfAttr = std::make_shared<ppc::core::PerfAttr>();
   perfAttr->num_running = 10;
   const boost::mpi::timer current_timer;
   perfAttr->current_timer = [&] { return current_timer.elapsed(); };
-
-  // Инициализация результатов производительности
   auto perfResults = std::make_shared<ppc::core::PerfResults>();
   auto perfAnalyzer = std::make_shared<ppc::core::Perf>(testMpiTaskParallel);
   perfAnalyzer->pipeline_run(perfAttr, perfResults);
   if (world.rank() == 0) {
     ppc::core::Perf::print_perf_statistic(perfResults);
-    ASSERT_NEAR(expected_result[0], global_result[0], 0.1);
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::sin(x) * std::cos(x); };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 1e-1);
   }
 }
 
-// Тест для производительности выполнения задачи Monte Carlo методом
-TEST(mpi_pikarychev_i_monte_carlo_perf_test, test_monte_carlo_task_run) {
+TEST(pikarychev_i_monte_carlo_mpi, test_task_run) {
   boost::mpi::communicator world;
-  std::vector<double> global_result;
-  std::vector<double> expected_result(1, 0.33335967263763133);
-
-  // Инициализация TaskData для выполнения задачи
+  std::vector<double> global_result(1, 0.0);
+  double a = 0.0;
+  double b = 2.0;
+  int num_points = 100000000;
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
   if (world.rank() == 0) {
-    double a = 0.0;
-    double b = 1.0;
-    int num_samples = 1000000;
-    int seed = 12345;
-    global_result = {0.0};
-    std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-    taskDataPar->inputs_count.emplace_back(inputs.size());
-    taskDataPar->outputs_count.emplace_back(global_result.size());
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
     taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
   }
+  auto testMpiTaskParallel = std::make_shared<pikarychev_i_monte_carlo_mpi::TestMPITaskParallel>(taskDataPar);
+  testMpiTaskParallel->exampl_func = [](double x) { return std::sin(x) * std::cos(x); };
 
-  auto testMpiTaskParallel = std::make_shared<pikarychev_i_monte_carlo_parallel::TestMPITaskParallel>(taskDataPar);
   ASSERT_EQ(testMpiTaskParallel->validation(), true);
   testMpiTaskParallel->pre_processing();
   testMpiTaskParallel->run();
   testMpiTaskParallel->post_processing();
-
-  // Настройка атрибутов производительности
   auto perfAttr = std::make_shared<ppc::core::PerfAttr>();
   perfAttr->num_running = 10;
   const boost::mpi::timer current_timer;
   perfAttr->current_timer = [&] { return current_timer.elapsed(); };
-
-  // Инициализация результатов производительности
   auto perfResults = std::make_shared<ppc::core::PerfResults>();
   auto perfAnalyzer = std::make_shared<ppc::core::Perf>(testMpiTaskParallel);
   perfAnalyzer->task_run(perfAttr, perfResults);
-
   if (world.rank() == 0) {
     ppc::core::Perf::print_perf_statistic(perfResults);
-    ASSERT_NEAR(expected_result[0], global_result[0], 0.1);
+    double reference_result = 4.0;
+    ASSERT_NEAR(reference_result, global_result[0], 1e-1);
   }
 }

@@ -3,254 +3,409 @@
 
 #include <boost/mpi/communicator.hpp>
 #include <boost/mpi/environment.hpp>
-#include <vector>
+#include <memory>
+#include <numbers>
 #include <random>
+
 #include "mpi/pikarychev_i_monte_carlo/include/ops_mpi.hpp"
 
-#include <mpi.h>
-
-TEST(MonteCarloIntegration, SequentialVsParallel) {
-  const double a = 0.0;
-  const double b = 1.0;
-  const int num_samples = 100000;  // Количество выборок
-  const int seed = 12345;  // Начальное значение для генератора случайных чисел
-
-  // Вектор для хранения результатов
-  std::vector<double> sequential_res(1, 0.0);
-  std::vector<double> parallel_res(1, 0.0);
-
-  // Инициализация данных задачи для последовательного выполнения
-  std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataSeq->inputs_count.emplace_back(inputs.size());
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(sequential_res.data()));
-  taskDataSeq->outputs_count.emplace_back(sequential_res.size());
-
-  // Создание и запуск последовательного выполнения
-  pikarychev_i_monte_carlo_parallel::TestMPITaskSequential sequentialTask(taskDataSeq);
-  ASSERT_TRUE(sequentialTask.validation());
-  ASSERT_TRUE(sequentialTask.pre_processing());
-  ASSERT_TRUE(sequentialTask.run());
-  ASSERT_TRUE(sequentialTask.post_processing());
-
-  double sequential_result = sequential_res[0];
-
-  // Инициализация данных задачи для параллельного выполнения
+TEST(pikarychev_i_monte_carlo, PositiveRangeTestMPI_sin) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
-  taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataPar->inputs_count.emplace_back(inputs.size());
-  taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(parallel_res.data()));
-  taskDataPar->outputs_count.emplace_back(parallel_res.size());
+  double a = 0.0;
+  double b = std::numbers::pi;
+  int num_points = 1000000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::sin(x); };
 
-  // Создание и запуск параллельного выполнения
-  pikarychev_i_monte_carlo_parallel::TestMPITaskParallel parallelTask(taskDataPar);
-  ASSERT_TRUE(parallelTask.validation());
-  ASSERT_TRUE(parallelTask.pre_processing());
-  ASSERT_TRUE(parallelTask.run());
-  ASSERT_TRUE(parallelTask.post_processing());
+  ASSERT_EQ(testMpiTaskParallel.validation(), true);
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
 
-  // Только процесс с rank 0 выполняет проверку результата
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank == 0) {
-    double parallel_result = parallel_res[0];
-    // Сравнение результатов
-    ASSERT_NEAR(sequential_result, parallel_result, 0.1);
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::sin(x); };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 1e-1);
   }
 }
 
-TEST(MonteCarloIntegration, SequentialVsParallel_1) {
-  const double a = 0.0;
-  const double b = 0.0;
-  const int num_samples = 1;  // Количество выборок
-  const int seed = 12345;  // Начальное значение для генератора случайных чисел
-
-  // Вектор для хранения результатов
-  std::vector<double> sequential_res(1, 0.0);
-  std::vector<double> parallel_res(1, 0.0);
-  // Инициализация данных задачи для последовательного выполнения
-  std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataSeq->inputs_count.emplace_back(inputs.size());
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(sequential_res.data()));
-  taskDataSeq->outputs_count.emplace_back(sequential_res.size());
-
-  // Создание и запуск последовательного выполнения
-  pikarychev_i_monte_carlo_parallel::TestMPITaskSequential sequentialTask(taskDataSeq);
-  ASSERT_TRUE(sequentialTask.validation());
-  ASSERT_TRUE(sequentialTask.pre_processing());
-  ASSERT_TRUE(sequentialTask.run());
-  ASSERT_TRUE(sequentialTask.post_processing());
-  double sequential_result = sequential_res[0];
+TEST(pikarychev_i_monte_carlo_mpi, PositiveRangeTestMPI_log_x_plus_1) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
-  taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataPar->inputs_count.emplace_back(inputs.size());
-  taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(parallel_res.data()));
-  taskDataPar->outputs_count.emplace_back(parallel_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskParallel parallelTask(taskDataPar);
-  ASSERT_TRUE(parallelTask.validation());
-  ASSERT_TRUE(parallelTask.pre_processing());
-  ASSERT_TRUE(parallelTask.run());
-  ASSERT_TRUE(parallelTask.post_processing());
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank == 0) {
-    double parallel_result = parallel_res[0];
-    ASSERT_EQ(sequential_result, parallel_result);
-    
+  double a = 1.0;
+  double b = 4.0;
+  int num_points = 1000000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::log(x + 1); };
+
+  ASSERT_EQ(testMpiTaskParallel.validation(), true);
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
+
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::log(x + 1); };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 1e-1);
   }
 }
 
-TEST(MonteCarloIntegration, SequentialVsParallel_4) {
-  const double a = -1.0;
-  const double b = 1.0;
-  const int num_samples = 100;  // Количество выборок
-  const int seed = 1;  // Начальное значение для генератора случайных чисел
-  std::vector<double> sequential_res(1, 0.33335967263763133);
-  std::vector<double> parallel_res(1, 0.33335967263763133);
-  std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataSeq->inputs_count.emplace_back(inputs.size());
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(sequential_res.data()));
-  taskDataSeq->outputs_count.emplace_back(sequential_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskSequential sequentialTask(taskDataSeq);
-  ASSERT_TRUE(sequentialTask.validation());
-  ASSERT_TRUE(sequentialTask.pre_processing());
-  ASSERT_TRUE(sequentialTask.run());
-  ASSERT_TRUE(sequentialTask.post_processing());
-  double sequential_result = sequential_res[0];
+TEST(pikarychev_i_monte_carlo_mpi, NegativeRangeTestMPI) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
-  taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataPar->inputs_count.emplace_back(inputs.size());
-  taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(parallel_res.data()));
-  taskDataPar->outputs_count.emplace_back(parallel_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskParallel parallelTask(taskDataPar);
-  ASSERT_TRUE(parallelTask.validation());
-  ASSERT_TRUE(parallelTask.pre_processing());
-  ASSERT_TRUE(parallelTask.run());
-  ASSERT_TRUE(parallelTask.post_processing());
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank == 0) {
-    double parallel_result = parallel_res[0];
-    ASSERT_NEAR(sequential_result, parallel_result, 0.1);
+  double a = -(std::numbers::pi);
+  double b = 0.0;
+  int num_points = 100000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::cos(x); };
+
+  ASSERT_EQ(testMpiTaskParallel.validation(), true);
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
+
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::cos(x); };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 1e-1);
   }
 }
 
-TEST(MonteCarloIntegration, SequentialVsParallel_5) {
-  const double a = -1.0;
-  const double b = -2.0;
-  const int num_samples = 100;  // Количество выборок
-  const int seed = 1;  // Начальное значение для генератора случайных чисел
-  std::vector<double> sequential_res(1, 0.33335967263763133);
-  std::vector<double> parallel_res(1, 0.33335967263763133);
-  std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataSeq->inputs_count.emplace_back(inputs.size());
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(sequential_res.data()));
-  taskDataSeq->outputs_count.emplace_back(sequential_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskSequential sequentialTask(taskDataSeq);
-  ASSERT_TRUE(sequentialTask.validation());
-  ASSERT_TRUE(sequentialTask.pre_processing());
-  ASSERT_TRUE(sequentialTask.run());
-  ASSERT_TRUE(sequentialTask.post_processing());
-  double sequential_result = sequential_res[0];
+TEST(pikarychev_i_monte_carlo_mpi, VerySmallRangeTestMPI) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
-  taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataPar->inputs_count.emplace_back(inputs.size());
-  taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(parallel_res.data()));
-  taskDataPar->outputs_count.emplace_back(parallel_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskParallel parallelTask(taskDataPar);
-  ASSERT_TRUE(parallelTask.validation());
-  ASSERT_TRUE(parallelTask.pre_processing());
-  ASSERT_TRUE(parallelTask.run());
-  ASSERT_TRUE(parallelTask.post_processing());
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank == 0) {
-    double parallel_result = parallel_res[0];
-    ASSERT_NEAR(sequential_result, parallel_result, 0.1);
+  double a = 0.1;
+  double b = 0.11;
+  int num_points = 100000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::cos(x) + std::sin(x); };
+
+  ASSERT_EQ(testMpiTaskParallel.validation(), true);
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
+
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::cos(x) + std::sin(x); };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 5e-7);
   }
 }
 
-TEST(MonteCarloIntegration, SequentialVsParallel_9) {
-  const double a = 0.0;
-  const double b = 1000.0;
-  const int num_samples = 1000;  // Количество выборок
-  const int seed = 1;  // Начальное значение для генератора случайных чисел
-  std::vector<double> sequential_res(1, 0.0);
-  std::vector<double> parallel_res(1, 0.0);
-  std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataSeq->inputs_count.emplace_back(inputs.size());
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(sequential_res.data()));
-  taskDataSeq->outputs_count.emplace_back(sequential_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskSequential sequentialTask(taskDataSeq);
-  ASSERT_TRUE(sequentialTask.validation());
-  ASSERT_TRUE(sequentialTask.pre_processing());
-  ASSERT_TRUE(sequentialTask.run());
-  ASSERT_TRUE(sequentialTask.post_processing());
-  double sequential_result = sequential_res[0];
+TEST(pikarychev_i_monte_carlo_mpi, LongRangeTestMPI) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
-  taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataPar->inputs_count.emplace_back(inputs.size());
-  taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(parallel_res.data()));
-  taskDataPar->outputs_count.emplace_back(parallel_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskParallel parallelTask(taskDataPar);
-  ASSERT_TRUE(parallelTask.validation());
-  ASSERT_TRUE(parallelTask.pre_processing());
-  ASSERT_TRUE(parallelTask.run());
-  ASSERT_TRUE(parallelTask.post_processing());
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank == 0) {
-    double parallel_result = parallel_res[0];
+  double a = -10.0;
+  double b = 15.0;
+  int num_points = 100000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::cos(x) + x * x; };
 
-    ASSERT_NEAR(sequential_result, parallel_result, 0.1);
+  ASSERT_TRUE(testMpiTaskParallel.validation());
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
+
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::cos(x) + x * x; };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 1e3);
   }
 }
 
-TEST(MonteCarloIntegration, SequentialVsParallel_reg9) {
-  std::random_device dev;
-  std::mt19937 gen(dev());
-  double a = (gen() % 100) / 100.0;
-  double b = (gen() % 100) / 100.0;
-  const int num_samples = 1000;  // Количество выборок
-  const int seed = 1;  // Начальное значение для генератора случайных чисел
-  std::vector<double> sequential_res(1, 0.0);
-  std::vector<double> parallel_res(1, 0.0);
-  std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  std::vector<double> inputs = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataSeq->inputs_count.emplace_back(inputs.size());
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(sequential_res.data()));
-  taskDataSeq->outputs_count.emplace_back(sequential_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskSequential sequentialTask(taskDataSeq);
-  ASSERT_TRUE(sequentialTask.validation());
-  ASSERT_TRUE(sequentialTask.pre_processing());
-  ASSERT_TRUE(sequentialTask.run());
-  ASSERT_TRUE(sequentialTask.post_processing());
-  double sequential_result = sequential_res[0];
+TEST(pikarychev_i_monte_carlo_mpi, VeryLongRangeTestMPI) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
   std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
-  taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(inputs.data()));
-  taskDataPar->inputs_count.emplace_back(inputs.size());
-  taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(parallel_res.data()));
-  taskDataPar->outputs_count.emplace_back(parallel_res.size());
-  pikarychev_i_monte_carlo_parallel::TestMPITaskParallel parallelTask(taskDataPar);
-  ASSERT_TRUE(parallelTask.validation());
-  ASSERT_TRUE(parallelTask.pre_processing());
-  ASSERT_TRUE(parallelTask.run());
-  ASSERT_TRUE(parallelTask.post_processing());
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  if (rank == 0) {
-    double parallel_result = parallel_res[0];
+  double a = -40.0;
+  double b = 50.0;
+  int num_points = 1000000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::sin(x) * std::sin(x) + std::cos(x) * x; };
 
-    ASSERT_NEAR(sequential_result, parallel_result, 0.1);
+  ASSERT_TRUE(testMpiTaskParallel.validation());
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
+
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::sin(x) * std::sin(x) + std::cos(x) * x; };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 3e4);
+  }
+}
+
+TEST(pikarychev_i_monte_carlo_mpi, EqualRangeTestMPI) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
+  std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
+  double a = -1.5;
+  double b = 1.5;
+  int num_points = 100000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::sin(x) * std::sin(x); };
+
+  ASSERT_TRUE(testMpiTaskParallel.validation());
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
+
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::sin(x) * std::sin(x); };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+    ASSERT_NEAR(reference_result[0], global_result[0], 3e-1);
+  }
+}
+
+TEST(pikarychev_i_monte_carlo_mpi, RandomTestMPI) {
+  boost::mpi::communicator world;
+  std::vector<double> global_result(1, 0.0);
+  std::shared_ptr<ppc::core::TaskData> taskDataPar = std::make_shared<ppc::core::TaskData>();
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<> dis(-7.0, 7.0);
+  double a = dis(gen);
+  double b = dis(gen);
+
+  if (a > b) std::swap(a, b);
+
+  if (a == b) b += 1.0;
+
+  int num_points = 100000;
+  if (world.rank() == 0) {
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataPar->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataPar->outputs.emplace_back(reinterpret_cast<uint8_t*>(global_result.data()));
+  }
+
+  pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testMpiTaskParallel(taskDataPar);
+  testMpiTaskParallel.exampl_func = [](double x) { return std::sin(x) * std::cos(x); };
+
+  ASSERT_TRUE(testMpiTaskParallel.validation());
+  testMpiTaskParallel.pre_processing();
+  testMpiTaskParallel.run();
+  testMpiTaskParallel.post_processing();
+
+  if (world.rank() == 0) {
+    std::vector<double> reference_result(1, 0.0);
+    std::shared_ptr<ppc::core::TaskData> taskDataSeq = std::make_shared<ppc::core::TaskData>();
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t*>(reference_result.data()));
+
+    pikarychev_i_monte_carlo_mpi::TestMPITaskSequential testMpiTaskSequential(taskDataSeq);
+    testMpiTaskSequential.exampl_func = [](double x) { return std::sin(x) * std::cos(x); };
+
+    ASSERT_EQ(testMpiTaskSequential.validation(), true);
+    testMpiTaskSequential.pre_processing();
+    testMpiTaskSequential.run();
+    testMpiTaskSequential.post_processing();
+
+    ASSERT_NEAR(reference_result[0], global_result[0], 3e1);
+  }
+}
+
+TEST(pikarychev_i_monte_carlo_mpi, TestMpi_InputLess3) {
+  std::shared_ptr<ppc::core::TaskData> taskDataMPIParallel = std::make_shared<ppc::core::TaskData>();
+  boost::mpi::communicator world;
+  if (world.rank() == 0) {
+    double a = -1.0;
+    double b = 1.0;
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    double result = 0.0;
+    taskDataMPIParallel->outputs.emplace_back(reinterpret_cast<uint8_t*>(&result));
+
+    pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testTaskMPIParallel(taskDataMPIParallel);
+    ASSERT_EQ(testTaskMPIParallel.validation(), false);
+  }
+}
+
+TEST(pikarychev_i_monte_carlo_mpi, TestMpi_InputMore3) {
+  std::shared_ptr<ppc::core::TaskData> taskDataMPIParallel = std::make_shared<ppc::core::TaskData>();
+  boost::mpi::communicator world;
+  if (world.rank() == 0) {
+    double a = -1.0;
+    double b = 1.0;
+    int num_points = 1000;
+    double extra_input = 5.0;
+
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&extra_input));
+
+    double result = 0.0;
+    taskDataMPIParallel->outputs.emplace_back(reinterpret_cast<uint8_t*>(&result));
+
+    pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testTaskMPIParallel(taskDataMPIParallel);
+    ASSERT_EQ(testTaskMPIParallel.validation(), false);
+  }
+}
+
+TEST(pikarychev_i_monte_carlo_mpi, TestMpi_OutputLess1) {
+  std::shared_ptr<ppc::core::TaskData> taskDataMPIParallel = std::make_shared<ppc::core::TaskData>();
+  boost::mpi::communicator world;
+  if (world.rank() == 0) {
+    double a = -1.0;
+    double b = 1.0;
+    int num_points = 1000;
+
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+
+    pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testTaskMPIParallel(taskDataMPIParallel);
+    ASSERT_EQ(testTaskMPIParallel.validation(), false);
+  }
+}
+
+TEST(pikarychev_i_monte_carlo_mpi, TestMpi_OutputMore1) {
+  std::shared_ptr<ppc::core::TaskData> taskDataMPIParallel = std::make_shared<ppc::core::TaskData>();
+  boost::mpi::communicator world;
+  if (world.rank() == 0) {
+    double a = -1.0;
+    double b = 1.0;
+    int num_points = 1000;
+
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&a));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&b));
+    taskDataMPIParallel->inputs.emplace_back(reinterpret_cast<uint8_t*>(&num_points));
+
+    double result1 = 0.0;
+    double result2 = 0.0;
+    taskDataMPIParallel->outputs.emplace_back(reinterpret_cast<uint8_t*>(&result1));
+    taskDataMPIParallel->outputs.emplace_back(reinterpret_cast<uint8_t*>(&result2));
+
+    pikarychev_i_monte_carlo_mpi::TestMPITaskParallel testTaskMPIParallel(taskDataMPIParallel);
+    ASSERT_EQ(testTaskMPIParallel.validation(), false);
   }
 }

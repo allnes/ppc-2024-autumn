@@ -1,129 +1,96 @@
 // Copyright 2023 Nesterov Alexander
 #include "mpi/pikarychev_i_monte_carlo/include/ops_mpi.hpp"
 
-#include <iostream>
-#include <random>
-
-std::vector<int> pikarychev_i_monte_carlo_parallel::getRandomVector(int sz) {
-  std::random_device dev;
-  std::mt19937 gen(dev());
-  std::vector<int> vec(sz);
-  for (int i = 0; i < sz; i++) {
-    vec[i] = gen() % 100;
-  }
-  return vec;
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskSequential::validation() {
+  internal_order_test();
+  return (taskData->inputs.size() == 3 && taskData->outputs.size() == 1);
 }
 
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskSequential::validation() {
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskSequential::pre_processing() {
   internal_order_test();
-  // Check count elements of output
-  return (taskData->inputs_count[0] == 4 && taskData->outputs_count[0] == 1);
-}
-
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskSequential::pre_processing() {
-  internal_order_test();
-  a = reinterpret_cast<double*>(taskData->inputs[0])[0];
-  b = reinterpret_cast<double*>(taskData->inputs[0])[1];
-  num_samples = static_cast<int>(reinterpret_cast<double*>(taskData->inputs[0])[2]);
-  seed = static_cast<int>(reinterpret_cast<double*>(taskData->inputs[0])[3]);
-
-  // �������� ���������
-  range_width = b - a;
+  a = *reinterpret_cast<double*>(taskData->inputs[0]);
+  b = *reinterpret_cast<double*>(taskData->inputs[1]);
+  num_points = *reinterpret_cast<int*>(taskData->inputs[2]);
   return true;
 }
 
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskSequential::run() {
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskSequential::run() {
   internal_order_test();
-  a = reinterpret_cast<double*>(taskData->inputs[0])[0];
-  b = reinterpret_cast<double*>(taskData->inputs[0])[1];
-  num_samples = static_cast<int>(reinterpret_cast<double*>(taskData->inputs[0])[2]);
-  seed = static_cast<int>(reinterpret_cast<double*>(taskData->inputs[0])[3]);
-  std::mt19937 generator(seed);  // ������������� ���������� ��������� ����� � �������� seed
-  std::uniform_real_distribution<double> distribution(a, b);
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<> dis(a, b);
 
-  // ��������� ����� ������
-
-  for (int i = 0; i < num_samples; i++) {
-    double x = distribution(generator);
-    res += function_double(x);
+  double sum = 0.0;
+  for (int i = 0; i < num_points; ++i) {
+    double x = dis(gen);
+    sum += exampl_func(x);
   }
-  res *= (b - a) / num_samples;
-
+  res = (b - a) * (sum / num_points);
   return true;
 }
 
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskSequential::post_processing() {
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskSequential::post_processing() {
   internal_order_test();
   reinterpret_cast<double*>(taskData->outputs[0])[0] = res;
   return true;
 }
 
-double pikarychev_i_monte_carlo_parallel::function_double(double x) { return x * x; }
-
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskParallel::validation() {
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskParallel::validation() {
   internal_order_test();
-  // Check count elements of input and output
-  if (world.rank() == 0) return (taskData->inputs_count[0] == 4 && taskData->outputs_count[0] == 1);
-  return true;
-}
-
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskParallel::pre_processing() {
-  internal_order_test();
-
-  // ������ ������� 0 ��������� ������
   if (world.rank() == 0) {
-    a = reinterpret_cast<double*>(taskData->inputs[0])[0];
-    b = reinterpret_cast<double*>(taskData->inputs[0])[1];
-    num_samples = (int)(reinterpret_cast<double*>(taskData->inputs[0])[2]);
-    seed = (int)(reinterpret_cast<double*>(taskData->inputs[0])[3]);
-    range_width = b - a;
+    if ((taskData->inputs.size() != 3) || (taskData->outputs.size() != 1)) {
+      return false;
+    }
+    num_points = *reinterpret_cast<int*>(taskData->inputs[2]);
+    if (num_points <= 0) {
+      return false;
+    }
   }
   return true;
 }
 
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskParallel::run() {
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskParallel::pre_processing() {
+  internal_order_test();
+  if (world.rank() == 0) {
+    a = *reinterpret_cast<double*>(taskData->inputs[0]);
+    b = *reinterpret_cast<double*>(taskData->inputs[1]);
+    num_points = *reinterpret_cast<int*>(taskData->inputs[2]);
+  }
+
+  return true;
+}
+
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskParallel::run() {
   internal_order_test();
 
-  // �������� ������������ ���������
   boost::mpi::broadcast(world, a, 0);
   boost::mpi::broadcast(world, b, 0);
-  boost::mpi::broadcast(world, num_samples, 0);
-  boost::mpi::broadcast(world, seed, 0);
-  boost::mpi::broadcast(world, range_width, 0);
+  boost::mpi::broadcast(world, num_points, 0);
 
-  const int rank = world.rank();
-  const int size = world.size();
-  // ����������� ����� ������� ��� ������� ��������
-  int local_samples = num_samples / size;
-  if (rank < num_samples % size) local_samples++;
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<> dis(a, b);
 
-  // ������������� ���������� ��������� �����
-  std::mt19937 generator(seed + rank);
-  std::uniform_real_distribution<double> distribution(a, b);
+  int remainder = num_points % world.size();
+  int num_points_for_process = num_points / world.size() + (world.rank() < remainder ? 1 : 0);
 
-  // ��������� ����� ��� ������� ��������
-  double local_sum = 0.0;
-  double x;
-  for (int i = 0; i < local_samples; i++) {
-    x = distribution(generator);
-    local_sum += function_double(x);
+  double sum = 0.0;
+  for (int i = 0; i < num_points_for_process; ++i) {
+    double x = dis(gen);
+    sum += exampl_func(x);
   }
-  std::cout << "ls=" << local_sum << std::endl;
-  // ���������� �����
-  double global_sum = 0.0;
-  boost::mpi::reduce(world, local_sum, global_sum, std::plus<>(), 0);
 
-  // ������ ������� � rank 0 ��������� ����������
+  boost::mpi::reduce(world, sum, res, std::plus<>(), 0);
   if (world.rank() == 0) {
-    res = (double)(global_sum * (range_width / num_samples));
+    res = (b - a) * res / num_points;
   }
   return true;
 }
 
-bool pikarychev_i_monte_carlo_parallel::TestMPITaskParallel::post_processing() {
+bool pikarychev_i_monte_carlo_mpi::TestMPITaskParallel::post_processing() {
   internal_order_test();
   if (world.rank() == 0) {
-    reinterpret_cast<double*>(taskData->outputs[0])[0] = res;
+    *reinterpret_cast<double*>(taskData->outputs[0]) = res;
   }
   return true;
 }

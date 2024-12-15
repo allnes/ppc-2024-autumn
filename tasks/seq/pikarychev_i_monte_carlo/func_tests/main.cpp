@@ -1,91 +1,97 @@
 // Copyright 2023 Nesterov Alexander
 #include <gtest/gtest.h>
 
-#include "seq/pikarychev_i_monte_carlo/include/ops_seq.hpp"
-#include <random>
 #include <memory>
+#include <numbers>
 #include <vector>
 
-TEST(Sequential, MonteCarlo_Integration_Interval_0_10) {
-  const double a = 0.0;
-  const double b = 10.0;
-  const int num_samples = 1000;
-  const int seed = 42;
-  double expected_result = 0.0;
-  std::mt19937 generator(seed);
-  std::uniform_real_distribution<double> distribution(a, b);
-  for (int i = 0; i < num_samples; i++) {
-    double x = distribution(generator);
-    expected_result += pikarychev_i_monte_carlo_seq::function_double(x);
-  }
-  expected_result *= (b - a) / num_samples;
-  std::vector<double> in = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  std::vector<double> out(1, 0.0);
-  auto taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t *>(in.data()));
-  taskDataSeq->inputs_count.emplace_back(in.size());
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t *>(out.data()));
-  taskDataSeq->outputs_count.emplace_back(out.size());
-  pikarychev_i_monte_carlo_seq::TestTaskSequential testTaskSequential(taskDataSeq);
-  ASSERT_TRUE(testTaskSequential.validation());
-  testTaskSequential.pre_processing();
-  testTaskSequential.run();
-  testTaskSequential.post_processing();
-  ASSERT_NEAR(expected_result, out[0], 1.0);
+#include "seq/pikarychev_i_monte_carlo/include/ops_seq.hpp"
+
+TEST(pikarychev_i_monte_carlo_seq, PositiveRangeTest) {
+  double a = 0.0;
+  double b = std::numbers::pi;
+  int num_points = 100000;
+  auto taskData = std::make_shared<ppc::core::TaskData>();
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&a));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&b));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&num_points));
+  double output = 0.0;
+  taskData->outputs.push_back(reinterpret_cast<uint8_t *>(&output));
+  pikarychev_i_monte_carlo_seq::TestTaskSequential task(taskData);
+  task.exampl_func = [](double x) { return std::sin(x); };
+
+  ASSERT_TRUE(task.validation());
+  task.pre_processing();
+  task.run();
+  task.post_processing();
+  double expected_result = 2.0;
+  ASSERT_NEAR(output, expected_result, 5e-1);
 }
 
-TEST(Sequential, MonteCarlo_Integration_Interval_0_50) {
-  const double a = 0.0;
-  const double b = 50.0;
-  const int num_samples = 1000;
-  const int seed = 42;
-  double expected_result = 0.0;
-  std::mt19937 generator(seed);
-  std::uniform_real_distribution<double> distribution(a, b);
-  for (int i = 0; i < num_samples; i++) {
-    double x = distribution(generator);
-    expected_result += pikarychev_i_monte_carlo_seq::function_double(x);
-  }
-  expected_result *= (b - a) / num_samples;
-  std::vector<double> in = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  std::vector<double> out(1, 0.0);
-  auto taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t *>(in.data()));
-  taskDataSeq->inputs_count.emplace_back(4);
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t *>(out.data()));
-  taskDataSeq->outputs_count.emplace_back(1);
-  pikarychev_i_monte_carlo_seq::TestTaskSequential testTaskSequential(taskDataSeq);
-  ASSERT_TRUE(testTaskSequential.validation());
-  testTaskSequential.pre_processing();
-  testTaskSequential.run();
-  testTaskSequential.post_processing();
-  ASSERT_NEAR(expected_result, out[0], 1.0);
+TEST(pikarychev_i_monte_carlo_seq, NegativeRangeTest) {
+  double a = -(std::numbers::pi);
+  double b = 0.0;
+  int num_points = 100000;
+  auto taskData = std::make_shared<ppc::core::TaskData>();
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&a));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&b));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&num_points));
+  double output = 0.0;
+  taskData->outputs.push_back(reinterpret_cast<uint8_t *>(&output));
+  pikarychev_i_monte_carlo_seq::TestTaskSequential task(taskData);
+  task.exampl_func = [](double x) { return std::sin(x); };
+
+  ASSERT_TRUE(task.validation());
+  task.pre_processing();
+  task.run();
+  task.post_processing();
+  double expected_result = -2.0;
+  ASSERT_NEAR(output, expected_result, 5e-1);
 }
 
-TEST(Sequential, MonteCarlo_Integration_Interval_0_100) {
-  const double a = 0.0;
-  const double b = 100.0;
-  const int num_samples = 1000;
-  const int seed = 42;
-  double expected_result = 0.0;
-  std::mt19937 generator(seed);
-  std::uniform_real_distribution<double> distribution(a, b);
-  for (int i = 0; i < num_samples; i++) {
-    double x = distribution(generator);
-    expected_result += pikarychev_i_monte_carlo_seq::function_double(x);
-  }
-  expected_result *= (b - a) / num_samples;
-  std::vector<double> in = {a, b, static_cast<double>(num_samples), static_cast<double>(seed)};
-  std::vector<double> out(1, 0.0);
-  auto taskDataSeq = std::make_shared<ppc::core::TaskData>();
-  taskDataSeq->inputs.emplace_back(reinterpret_cast<uint8_t *>(in.data()));
-  taskDataSeq->inputs_count.emplace_back(4);
-  taskDataSeq->outputs.emplace_back(reinterpret_cast<uint8_t *>(out.data()));
-  taskDataSeq->outputs_count.emplace_back(1);
-  pikarychev_i_monte_carlo_seq::TestTaskSequential testTaskSequential(taskDataSeq);
-  ASSERT_TRUE(testTaskSequential.validation());
-  testTaskSequential.pre_processing();
-  testTaskSequential.run();
-  testTaskSequential.post_processing();
-  ASSERT_NEAR(expected_result, out[0], 1.0);
+TEST(pikarychev_i_monte_carlo_seq, FullRangeTest) {
+  double a = -1.0;
+  double b = 2.0;
+  int num_points = 100000;
+  auto taskData = std::make_shared<ppc::core::TaskData>();
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&a));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&b));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&num_points));
+  double output = 0.0;
+  taskData->outputs.push_back(reinterpret_cast<uint8_t *>(&output));
+  pikarychev_i_monte_carlo_seq::TestTaskSequential task(taskData);
+  task.exampl_func = [](double x) { return std::exp(x); };
+
+  ASSERT_TRUE(task.validation());
+  task.pre_processing();
+  task.run();
+  task.post_processing();
+  double expected_result = 7.02;
+  ASSERT_NEAR(output, expected_result, 5e-1);
+}
+
+TEST(pikarychev_i_monte_carlo_seq, InputSizeLessThan3) {
+  auto taskData = std::make_shared<ppc::core::TaskData>();
+  double a = 0.0;
+  double b = 1.0;
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&a));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&b));
+  double output = 0.0;
+  taskData->outputs.push_back(reinterpret_cast<uint8_t *>(&output));
+  pikarychev_i_monte_carlo_seq::TestTaskSequential task(taskData);
+  task.exampl_func = [](double x) { return std::exp(x); };
+  ASSERT_FALSE(task.validation());
+}
+
+TEST(pikarychev_i_monte_carlo_seq, OutputSizeLessThan1) {
+  auto taskData = std::make_shared<ppc::core::TaskData>();
+  double a = 0.0;
+  double b = 1.0;
+  int num_points = 10000;
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&a));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&b));
+  taskData->inputs.push_back(reinterpret_cast<uint8_t *>(&num_points));
+  pikarychev_i_monte_carlo_seq::TestTaskSequential task(taskData);
+  task.exampl_func = [](double x) { return std::exp(x); };
+  ASSERT_FALSE(task.validation());
 }
